@@ -1,66 +1,124 @@
 library(class)
 library(gmodels)
+library(ggplot2)
 library(pvclass)
+library(reshape2)
 setwd("C:/Carabid_Data/Carabid")
 
-taxonaccuracy = data.frame(matrix(NA, nrow = 8, ncol = 2))
-names(taxonaccuracy) = c("Rank", "Accuracy")
+taxonprob = data.frame(matrix(NA, nrow = 8, ncol = 3))
+df = data.frame(matrix(NA, nrow = 24, ncol = 3))
+is.nan.data.frame <- function(x)
+  do.call(cbind, lapply(x, is.nan))
 
-#         #
-#  GENUS  #
-#         #
+results = data.frame(matrix(NA, nrow = 8, ncol = 7))
+names(results) = c("Rank", "Accuracy", "True Prob", "False Prob", "Precision", "Recall", "F1")
+numk = 50
 
-genustestData= read.csv("normgenustest.csv")
-genustrainData = read.csv("normgenustrain.csv")
-genusvalidData = read.csv("normgenusvalid.csv")
-
-genustestData = genustestData[,-c(1:14,16:20,22,23,25:31,33:39)]
-genustrainData = genustrainData[,-c(1:14,16:20,22,23,25:31,33:39)]
-genusvalidData = genusvalidData[,-c(1:14,16:20,22,23,25:31,33:39)]
-
-genustrainLabels = genustrainData[,1]
-genusvalidLabels = genusvalidData[,1]
-genustestLabels = genustestData[,1]
-
-num.genustrain = genustrainData[, sapply(genustrainData, is.numeric)]
-num.genusvalid = genusvalidData[, sapply(genusvalidData, is.numeric)]
-num.genustest = genustestData[, sapply(genustestData, is.numeric)]
-
-
-#Automatic KNN
-n = 1
-pred = data.frame(matrix(NA, nrow = nrow(num.genusvalid), ncol = 50))
-for(n in 1:50){
-  pred[, n] = knn(train = num.genustrain, test = num.genusvalid, cl = genustrainLabels, k=n)
-}
-
-merge = data.frame(genusvalidLabels, pred)
-
-#K vs Accuracy
-
-i = 1
-j = 1
-True = 0
-genusaccuracy = data.frame(matrix(NA, nrow = 50, ncol = 2))
-genusaccuracy[,1] = c(1:50)
-for(j in 2:ncol(merge)){
-  for (i in 1:nrow(merge)) {
-    if (merge[i,1] == merge[i,j]){
-      True = True+1
+#AutoKnn function
+autoknn = function(traindat, testdat, trainlab, testlab, numrow, numk = 50){
+  n = 1
+  pred = data.frame(matrix(NA, nrow = numrow, ncol = numk))
+  for(n in 1:numk){
+    pred[, n] = knn(train = traindat, test = testdat, cl = trainlab, k=n)
+  }
+  merge = data.frame(testlab, pred)
+  
+  i = 1
+  j = 1
+  True = 0
+  accuracy = data.frame(matrix(NA, nrow = numk, ncol = 2))
+  accuracy[,1] = c(1:numk)
+  for(j in 2:ncol(merge)){
+    for(i in 1:nrow(merge)) {
+      if(merge[i,1] == merge[i,j]){
+        True = True+1
+      }
+    }
+    accuracy[j-1,2] = True/nrow(merge)
+    True = 0
+    i = 1
+  }
+  #Prob returns the vote share of the winning category
+  prob = data.frame(matrix(NA, nrow = nrow(pred), ncol = 2))
+  prob[,1] = knn(train = traindat, test = testdat, cl = trainlab, k=which.max(accuracy[,2]))
+  prob[,2] = attr(knn(train = traindat, test = testdat, cl = trainlab, k=which.max(accuracy[,2]), prob = TRUE), "prob")
+  mergeprob = data.frame(testlab, prob)
+  names(mergeprob) = c("Real", "Pred", "Prob")
+  
+  #Average prob for rank (Correct Results)
+  i = 1
+  count = 0
+  total = 0
+  for (i in 1:nrow(mergeprob)){
+    if (mergeprob[i,1] == mergeprob[i,2]){
+      count = count + 1
+      total = total + mergeprob[i,3]
     }
   }
-  genusaccuracy[j-1,2] = True/nrow(merge)
-  True = 0
+  truetaxonprob = total/count
+  
+  #Average prob for rank (Incorrect Results)
   i = 1
+  count = 0
+  total = 0
+  for (i in 1:nrow(mergeprob)){
+    if (mergeprob[i,1] != mergeprob[i,2]){
+      count = count + 1
+      total = total + mergeprob[i,3]
+    }
+  }
+  falsetaxonprob = total/count
+  
+  names = data.frame(levels(trainlab))
+  max = data.frame(testlab, pred[,which.max(accuracy[,2])])
+  
+  pr = data.frame(matrix(NA, nrow = nrow(names), ncol = 3))
+  
+  i = 1
+  j = 1
+  Tp = 0
+  Fp = 0
+  Tn = 0
+  Fn = 0
+  for(i in 1:nrow(names)){
+    for(j in 1:nrow(max)){
+      if(max[j,1] == names[i,1]){
+        if(max[j,1] == max[j,2]){
+          Tp = Tp + 1
+        }
+        else{
+          Fn = Fn + 1
+        }
+      } 
+      if(max[j,2] == names[i,1] & max[j,1] != names[i,1]){
+        Fp = Fp +1
+      }
+      else{
+        Tn = Tn + 1
+      }
+    }
+    pr[i,1] = Tp/(Tp + Fp)
+    pr[i,2] = Tp/(Tp + Fn)
+    pr[i,3] = 2*((pr[i,1]*pr[i,2])/(pr[i,1]+pr[i,2]))
+    j = 1
+    Tp = Tn = Fn = Fp = 0
+  }
+  
+  pr = data.frame(names, pr)
+  names(pr) = c("Names", "Precision", "Recall", "F1")
+  pr[is.nan(pr)] = 0
+  mean(pr[,2])
+  mean(pr[,3])
+  mean(pr[,4])
+  
+  mylist = list("Accuracy" = max(accuracy[,2]), "trueprob" = truetaxonprob, "falseprob" = falsetaxonprob, "Precision" = mean(pr[,2]), "Recall" = mean(pr[,3]), "F1" = mean(pr[,4]))
+  
+  return(mylist)
 }
-names(genusaccuracy) = c("K", "Accuracy")
 
-taxonaccuracy[4,1] = "Genus"
-taxonaccuracy[4,2] = max(genusaccuracy[,2])
-
-#           #
-#  Species  #
-#           #
+#############           #############
+#############  Species  #############
+#############           #############
 
 sptestData= read.csv("normsptest.csv")
 sptrainData = read.csv("normsptrain.csv")
@@ -78,41 +136,9 @@ num.sptrain = sptrainData[, sapply(sptrainData, is.numeric)]
 num.spvalid = spvalidData[, sapply(spvalidData, is.numeric)]
 num.sptest = sptestData[, sapply(sptestData, is.numeric)]
 
-
-#Automatic KNN
-n = 1
-pred = data.frame(matrix(NA, nrow = nrow(num.spvalid), ncol = 50))
-for(n in 1:50){
-  pred[, n] = knn(train = num.sptrain, test = num.spvalid, cl = sptrainLabels, k=n)
-}
-
-merge = data.frame(spvalidLabels, pred)
-
-#K vs Accuracy
-
-i = 1
-j = 1
-True = 0
-spaccuracy = data.frame(matrix(NA, nrow = 50, ncol = 2))
-spaccuracy[,1] = c(1:50)
-for(j in 2:ncol(merge)){
-  for (i in 1:nrow(merge)) {
-    if (merge[i,1] == merge[i,j]){
-      True = True+1
-    }
-  }
-  spaccuracy[j-1,2] = True/nrow(merge)
-  True = 0
-  i = 1
-}
-names(spaccuracy) = c("K", "Accuracy")
-
-taxonaccuracy[1,1] = "Species"
-taxonaccuracy[1,2] = max(spaccuracy[,2])
-
-#         #
-#  group  #
-#         #
+#############         #############
+#############  Group  #############
+#############         #############
 
 grouptestData= read.csv("normgrouptest.csv")
 grouptrainData = read.csv("normgrouptrain.csv")
@@ -130,41 +156,9 @@ num.grouptrain = grouptrainData[, sapply(grouptrainData, is.numeric)]
 num.groupvalid = groupvalidData[, sapply(groupvalidData, is.numeric)]
 num.grouptest = grouptestData[, sapply(grouptestData, is.numeric)]
 
-
-#Automatic KNN
-n = 1
-pred = data.frame(matrix(NA, nrow = nrow(num.groupvalid), ncol = 50))
-for(n in 1:50){
-  pred[, n] = knn(train = num.grouptrain, test = num.groupvalid, cl = grouptrainLabels, k=n)
-}
-
-merge = data.frame(groupvalidLabels, pred)
-
-#K vs Accuracy
-
-i = 1
-j = 1
-True = 0
-groupaccuracy = data.frame(matrix(NA, nrow = 50, ncol = 2))
-groupaccuracy[,1] = c(1:50)
-for(j in 2:ncol(merge)){
-  for (i in 1:nrow(merge)) {
-    if (merge[i,1] == merge[i,j]){
-      True = True+1
-    }
-  }
-  groupaccuracy[j-1,2] = True/nrow(merge)
-  True = 0
-  i = 1
-}
-names(groupaccuracy) = c("K", "Accuracy")
-
-taxonaccuracy[2,1] = "Group"
-taxonaccuracy[2,2] = max(groupaccuracy[,2])
-
-#         #
-#  subgenus  #
-#         #
+#############            #############
+#############  Subgenus  #############
+#############            #############
 
 subgenustestData= read.csv("normsubgenustest.csv")
 subgenustrainData = read.csv("normsubgenustrain.csv")
@@ -182,41 +176,29 @@ num.subgenustrain = subgenustrainData[, sapply(subgenustrainData, is.numeric)]
 num.subgenusvalid = subgenusvalidData[, sapply(subgenusvalidData, is.numeric)]
 num.subgenustest = subgenustestData[, sapply(subgenustestData, is.numeric)]
 
+############         #############
+############  GENUS  #############
+############         #############
 
-#Automatic KNN
-n = 1
-pred = data.frame(matrix(NA, nrow = nrow(num.subgenusvalid), ncol = 50))
-for(n in 1:50){
-  pred[, n] = knn(train = num.subgenustrain, test = num.subgenusvalid, cl = subgenustrainLabels, k=n)
-}
+genustestData= read.csv("normgenustest.csv")
+genustrainData = read.csv("normgenustrain.csv")
+genusvalidData = read.csv("normgenusvalid.csv")
 
-merge = data.frame(subgenusvalidLabels, pred)
+genustestData = genustestData[,-c(1:14,16:20,22,23,25:31,33:39)]
+genustrainData = genustrainData[,-c(1:14,16:20,22,23,25:31,33:39)]
+genusvalidData = genusvalidData[,-c(1:14,16:20,22,23,25:31,33:39)]
 
-#K vs Accuracy
+genustrainLabels = genustrainData[,1]
+genusvalidLabels = genusvalidData[,1]
+genustestLabels = genustestData[,1]
 
-i = 1
-j = 1
-True = 0
-subgenusaccuracy = data.frame(matrix(NA, nrow = 50, ncol = 2))
-subgenusaccuracy[,1] = c(1:50)
-for(j in 2:ncol(merge)){
-  for (i in 1:nrow(merge)) {
-    if (merge[i,1] == merge[i,j]){
-      True = True+1
-    }
-  }
-  subgenusaccuracy[j-1,2] = True/nrow(merge)
-  True = 0
-  i = 1
-}
-names(subgenusaccuracy) = c("K", "Accuracy")
+num.genustrain = genustrainData[, sapply(genustrainData, is.numeric)]
+num.genusvalid = genusvalidData[, sapply(genusvalidData, is.numeric)]
+num.genustest = genustestData[, sapply(genustestData, is.numeric)]
 
-taxonaccuracy[3,1] = "Subgenus"
-taxonaccuracy[3,2] = max(subgenusaccuracy[,2])
-
-#         #
-#  subtribe  #
-#         #
+#############            #############
+#############  Subtribe  #############
+#############            #############
 
 subtribtestData= read.csv("normsubtribtest.csv")
 subtribtrainData = read.csv("normsubtribtrain.csv")
@@ -234,41 +216,9 @@ num.subtribtrain = subtribtrainData[, sapply(subtribtrainData, is.numeric)]
 num.subtribvalid = subtribvalidData[, sapply(subtribvalidData, is.numeric)]
 num.subtribtest = subtribtestData[, sapply(subtribtestData, is.numeric)]
 
-
-#Automatic KNN
-n = 1
-pred = data.frame(matrix(NA, nrow = nrow(num.subtribvalid), ncol = 50))
-for(n in 1:50){
-  pred[, n] = knn(train = num.subtribtrain, test = num.subtribvalid, cl = subtribtrainLabels, k=n)
-}
-
-merge = data.frame(subtribvalidLabels, pred)
-
-#K vs Accuracy
-
-i = 1
-j = 1
-True = 0
-subtribaccuracy = data.frame(matrix(NA, nrow = 50, ncol = 2))
-subtribaccuracy[,1] = c(1:50)
-for(j in 2:ncol(merge)){
-  for (i in 1:nrow(merge)) {
-    if (merge[i,1] == merge[i,j]){
-      True = True+1
-    }
-  }
-  subtribaccuracy[j-1,2] = True/nrow(merge)
-  True = 0
-  i = 1
-}
-names(subtribaccuracy) = c("K", "Accuracy")
-
-taxonaccuracy[5,1] = "Subtribe"
-taxonaccuracy[5,2] = max(subtribaccuracy[,2])
-
-#         #
-#  Tribe  #
-#         #
+#############         #############
+#############  Tribe  #############
+#############         #############
 
 tribtestData= read.csv("normtribtest.csv")
 tribtrainData = read.csv("normtribtrain.csv")
@@ -286,41 +236,9 @@ num.tribtrain = tribtrainData[, sapply(tribtrainData, is.numeric)]
 num.tribvalid = tribvalidData[, sapply(tribvalidData, is.numeric)]
 num.tribtest = tribtestData[, sapply(tribtestData, is.numeric)]
 
-
-#Automatic KNN
-n = 1
-pred = data.frame(matrix(NA, nrow = nrow(num.tribvalid), ncol = 50))
-for(n in 1:50){
-  pred[, n] = knn(train = num.tribtrain, test = num.tribvalid, cl = tribtrainLabels, k=n)
-}
-
-merge = data.frame(tribvalidLabels, pred)
-
-#K vs Accuracy
-
-i = 1
-j = 1
-True = 0
-tribaccuracy = data.frame(matrix(NA, nrow = 50, ncol = 2))
-tribaccuracy[,1] = c(1:50)
-for(j in 2:ncol(merge)){
-  for (i in 1:nrow(merge)) {
-    if (merge[i,1] == merge[i,j]){
-      True = True+1
-    }
-  }
-  tribaccuracy[j-1,2] = True/nrow(merge)
-  True = 0
-  i = 1
-}
-names(tribaccuracy) = c("K", "Accuracy")
-
-taxonaccuracy[6,1] = "Tribe"
-taxonaccuracy[6,2] = max(tribaccuracy[,2])
-
-#         #
-#  Supertribe  #
-#         #
+#############              #############
+#############  Supertribe  #############
+#############              #############
 
 suptribtestData= read.csv("normsuptribtest.csv")
 suptribtrainData = read.csv("normsuptribtrain.csv")
@@ -338,41 +256,9 @@ num.suptribtrain = suptribtrainData[, sapply(suptribtrainData, is.numeric)]
 num.suptribvalid = suptribvalidData[, sapply(suptribvalidData, is.numeric)]
 num.suptribtest = suptribtestData[, sapply(suptribtestData, is.numeric)]
 
-
-#Automatic KNN
-n = 1
-pred = data.frame(matrix(NA, nrow = nrow(num.suptribvalid), ncol = 50))
-for(n in 1:50){
-  pred[, n] = knn(train = num.suptribtrain, test = num.suptribvalid, cl = suptribtrainLabels, k=n)
-}
-
-merge = data.frame(suptribvalidLabels, pred)
-
-#K vs Accuracy
-
-i = 1
-j = 1
-True = 0
-suptribaccuracy = data.frame(matrix(NA, nrow = 50, ncol = 2))
-suptribaccuracy[,1] = c(1:50)
-for(j in 2:ncol(merge)){
-  for (i in 1:nrow(merge)) {
-    if (merge[i,1] == merge[i,j]){
-      True = True+1
-    }
-  }
-  suptribaccuracy[j-1,2] = True/nrow(merge)
-  True = 0
-  i = 1
-}
-names(suptribaccuracy) = c("K", "Accuracy")
-
-taxonaccuracy[7,1] = "Supertribe"
-taxonaccuracy[7,2] = max(suptribaccuracy[,2])
-
-#         #
-#  Subfamily  #
-#         #
+#############             #############
+#############  Subfamily  #############
+#############             #############
 
 subfamtestData= read.csv("normsubfamtest.csv")
 subfamtrainData = read.csv("normsubfamtrain.csv")
@@ -391,42 +277,165 @@ num.subfamvalid = subfamvalidData[, sapply(subfamvalidData, is.numeric)]
 num.subfamtest = subfamtestData[, sapply(subfamtestData, is.numeric)]
 
 
-#Automatic KNN
-n = 1
-pred = data.frame(matrix(NA, nrow = nrow(num.subfamvalid), ncol = 50))
-for(n in 1:50){
-  pred[, n] = knn(train = num.subfamtrain, test = num.subfamvalid, cl = subfamtrainLabels, k=n)
-}
-
-merge = data.frame(subfamvalidLabels, pred)
-
-#K vs Accuracy
-
-i = 1
-j = 1
-True = 0
-subfamaccuracy = data.frame(matrix(NA, nrow = 50, ncol = 2))
-subfamaccuracy[,1] = c(1:50)
-for(j in 2:ncol(merge)){
-  for (i in 1:nrow(merge)) {
-    if (merge[i,1] == merge[i,j]){
-      True = True+1
-    }
+m = 1
+for(m in 1:8){
+  if(m == 1){
+    results[m,1] = "Species"
+    list = autoknn(num.sptrain, num.spvalid, sptrainLabels, spvalidLabels, nrow(num.spvalid))
+    results[m,2] = list$Accuracy
+    results[m,3] = list$trueprob
+    results[m,4] = list$falseprob
+    results[m,5] = list$Precision
+    results[m,6] = list$Recall
+    results[m,7] = list$F1
   }
-  subfamaccuracy[j-1,2] = True/nrow(merge)
-  True = 0
-  i = 1
+  if(m == 2){
+    results[m,1] = "Group"
+    list = autoknn(num.grouptrain, num.groupvalid, grouptrainLabels, groupvalidLabels, nrow(num.groupvalid))
+    results[m,2] = list$Accuracy
+    results[m,3] = list$trueprob
+    results[m,4] = list$falseprob
+    results[m,5] = list$Precision
+    results[m,6] = list$Recall
+    results[m,7] = list$F1
+  }
+  if(m == 3){
+    results[m,1] = "Subgenus"
+    list = autoknn(num.subgenustrain, num.subgenusvalid, subgenustrainLabels, subgenusvalidLabels, nrow(num.subgenusvalid))
+    results[m,2] = list$Accuracy
+    results[m,3] = list$trueprob
+    results[m,4] = list$falseprob
+    results[m,5] = list$Precision
+    results[m,6] = list$Recall
+    results[m,7] = list$F1
+  }
+  if(m == 4){
+    results[m,1] = "Genus"
+    list = autoknn(num.genustrain, num.genusvalid, genustrainLabels, genusvalidLabels, nrow(num.genusvalid))
+    results[m,2] = list$Accuracy
+    results[m,3] = list$trueprob
+    results[m,4] = list$falseprob
+    results[m,5] = list$Precision
+    results[m,6] = list$Recall
+    results[m,7] = list$F1
+  }
+  if(m == 5){
+    results[m,1] = "Subtribe"
+    list = autoknn(num.subtribtrain, num.subtribvalid, subtribtrainLabels, subtribvalidLabels, nrow(num.subtribvalid))
+    results[m,2] = list$Accuracy
+    results[m,3] = list$trueprob
+    results[m,4] = list$falseprob
+    results[m,5] = list$Precision
+    results[m,6] = list$Recall
+    results[m,7] = list$F1
+  }
+  if(m == 6){
+    results[m,1] = "Tribe"
+    list = autoknn(num.tribtrain, num.tribvalid, tribtrainLabels, tribvalidLabels, nrow(num.tribvalid))
+    results[m,2] = list$Accuracy
+    results[m,3] = list$trueprob
+    results[m,4] = list$falseprob
+    results[m,5] = list$Precision
+    results[m,6] = list$Recall
+    results[m,7] = list$F1
+  }
+  if(m == 7){
+    results[m,1] = "Supertribe"
+    list = autoknn(num.suptribtrain, num.suptribvalid, suptribtrainLabels, suptribvalidLabels, nrow(num.suptribvalid))
+    results[m,2] = list$Accuracy
+    results[m,3] = list$trueprob
+    results[m,4] = list$falseprob
+    results[m,5] = list$Precision
+    results[m,6] = list$Recall
+    results[m,7] = list$F1
+  }
+  if(m == 8){
+    results[m,1] = "Subfamily"
+    list = autoknn(num.subfamtrain, num.subfamvalid, subfamtrainLabels, subfamvalidLabels, nrow(num.subfamvalid))
+    results[m,2] = list$Accuracy
+    results[m,3] = list$trueprob
+    results[m,4] = list$falseprob
+    results[m,5] = list$Precision
+    results[m,6] = list$Recall
+    results[m,7] = list$F1
+  }
 }
-names(subfamaccuracy) = c("K", "Accuracy")
 
-taxonaccuracy[8,1] = "Subfamily"
-taxonaccuracy[8,2] = max(subfamaccuracy[,2])
+results[,2]=round(results[,2],3)
+results$Rank <- factor(results$Rank, levels = results$Rank)
 
-taxonaccuracy[,2]=round(taxonaccuracy[,2],3)
-taxonaccuracy$Rank <- factor(taxonaccuracy$Rank, levels = taxonaccuracy$Rank)
-
-ggplot(data=taxonaccuracy, aes(x=Rank, y=Accuracy)) +
+ggplot(data=results, aes(x=Rank, y=Accuracy)) +
      geom_bar(stat="identity", fill="steelblue")+
      geom_text(aes(label=Accuracy), vjust=1.6, color="white", size=3.5)+
      theme(axis.text.x = element_text(angle = 90, hjust = 0))+
      ylim(0, 1)
+
+mresults = melt(results, id.vars = "Rank")
+names(mresults) = c("Rank", "Variables", "Value")
+mresults$Value = round(mresults$Value, digits = 3)
+Accuracy = subset(mresults, Variables %in% "Accuracy")
+prob = subset(mresults, Variables %in% c("True Prob", "False Prob"))
+prf = subset(mresults, Variables %in% c("Precision", "Recall", "F1"))
+order = c("Species", "Group", "Subgenus", "Genus", "Subtribe", "Tribe", "Supertribe", "Subfamily")
+
+
+ggplot(mresults, aes(Rank,Value, fill=Variables)) + 
+    geom_bar(position = "dodge", stat="identity")+ 
+    scale_x_discrete(limits=order) +
+    scale_fill_brewer(palette = "Paired") +
+    geom_text(aes(label = Value), position = position_dodge(0.9), vjust = -0.5) +
+    ggtitle("All Results")+
+    theme(
+      panel.background = element_rect(fill = "#BFD5E3", colour = "#BFD5E3",
+                                    size = 2, linetype = "solid"),
+      panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                    colour = "white"), 
+      panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                    colour = "white"),
+      plot.title = element_text(hjust = 0.5))
+ 
+ggplot(Accuracy, aes(Rank,Value, fill = Rank)) + 
+  geom_bar(position = "dodge", stat="identity")+ 
+  scale_x_discrete(limits=c("Species", "Group", "Subgenus", "Genus", "Subtribe", "Tribe", "Supertribe", "Subfamily")) +
+  scale_fill_viridis(discrete = T, option = "D", limits = rev(order)) +
+  guides(fill=FALSE) +
+  geom_text(aes(label = Value), position = position_dodge(0.9), vjust = -0.5) +
+  ggtitle("Accuracy")+
+  theme(
+    panel.background = element_rect(fill = "#BFD5E3", colour = "#BFD5E3",
+                                    size = 2, linetype = "solid"),
+    panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                    colour = "white"), 
+    panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                    colour = "white"),
+    plot.title = element_text(hjust = 0.5))
+
+ggplot(prob, aes(Rank,Value, fill=Variables)) + 
+  geom_bar(position = "dodge", stat="identity")+ 
+  scale_x_discrete(limits=c("Species", "Group", "Subgenus", "Genus", "Subtribe", "Tribe", "Supertribe", "Subfamily")) +
+  scale_fill_brewer(palette = "Dark2") +
+  geom_text(aes(label = Value), position = position_dodge(0.9), vjust = -0.5) +
+  ggtitle("Probability")+
+  theme(
+    panel.background = element_rect(fill = "#BFD5E3", colour = "#BFD5E3",
+                                    size = 2, linetype = "solid"),
+    panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                    colour = "white"), 
+    panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                    colour = "white"),
+    plot.title = element_text(hjust = 0.5))
+
+ggplot(prf, aes(Rank,Value, fill=Variables)) + 
+  geom_bar(position = "dodge", stat="identity")+ 
+  scale_x_discrete(limits=c("Species", "Group", "Subgenus", "Genus", "Subtribe", "Tribe", "Supertribe", "Subfamily")) +
+  scale_fill_brewer(palette = "Accent") +
+  geom_text(aes(label = Value), position = position_dodge(0.9), vjust = -0.5) +
+  ggtitle("Precision/Recall/F1")+
+  theme(
+    panel.background = element_rect(fill = "#BFD5E3", colour = "#BFD5E3",
+                                    size = 2, linetype = "solid"),
+    panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                    colour = "white"), 
+    panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                    colour = "white"),
+    plot.title = element_text(hjust = 0.5))
