@@ -10,12 +10,16 @@ df = data.frame(matrix(NA, nrow = 24, ncol = 3))
 is.nan.data.frame <- function(x)
   do.call(cbind, lapply(x, is.nan))
 
-results = data.frame(matrix(NA, nrow = 8, ncol = 7))
+results = data.frame(matrix(NA, nrow = 8, ncol = 8))
 names(results) = c("Rank", "Accuracy", "True Prob", "False Prob", "Precision", "Recall", "F1")
 numk = 50
 
 #AutoKnn function
-autoknn = function(traindat, testdat, trainlab, testlab, numrow, numk = 50){
+autoknn = function(rank, traindat, testdat, trainlab, testlab, numrow, numk = 50){
+#Data frame with number of observations in each category in test data
+  rankabund = as.data.frame(table(testlab))
+  
+#kNN
   n = 1
   pred = data.frame(matrix(NA, nrow = numrow, ncol = numk))
   for(n in 1:numk){
@@ -67,24 +71,23 @@ autoknn = function(traindat, testdat, trainlab, testlab, numrow, numk = 50){
   truetaxonprob = truetotal/correct
   falsetaxonprob = falsetotal/incorrect
   
-  probdist = data.frame(matrix(NA, nrow = nrow(mergeprob), ncol = 2))
-  names(probdist) = c("True", "False")
+  trueprobdistr = c()
+  falseprobdistr = c()
   i = 1
   total = 0
   for (i in 1:nrow(mergeprob)){
     if (mergeprob[i,1] == mergeprob[i,2]){
-      probdist[i,1] = mergeprob[i,3]
+      trueprobdistr = c(trueprobdistr, mergeprob[i,3])
     }
     else{
-      probdist[i,2] = mergeprob[i,3]
+      falseprobdistr = c(falseprobdistr, mergeprob[i,3])
     }
   }
   
   #Precision/recall/F1 calculator
-  names = data.frame(levels(trainlab))
   max = data.frame(testlab, pred[,which.max(accuracy[,2])])
   
-  pr = data.frame(matrix(NA, nrow = nrow(names), ncol = 3))
+  pr = data.frame(matrix(NA, nrow = nrow(rankabund), ncol = 3))
   
   i = 1
   j = 1
@@ -92,9 +95,9 @@ autoknn = function(traindat, testdat, trainlab, testlab, numrow, numk = 50){
   Fp = 0
   Tn = 0
   Fn = 0
-  for(i in 1:nrow(names)){
+  for(i in 1:nrow(rankabund)){
     for(j in 1:nrow(max)){
-      if(max[j,1] == names[i,1]){
+      if(max[j,1] == rankabund[i,1]){
         if(max[j,1] == max[j,2]){
           Tp = Tp + 1
         }
@@ -102,7 +105,7 @@ autoknn = function(traindat, testdat, trainlab, testlab, numrow, numk = 50){
           Fn = Fn + 1
         }
       } 
-      if(max[j,2] == names[i,1] & max[j,1] != names[i,1]){
+      if(max[j,2] == rankabund[i,1] & max[j,1] != rankabund[i,1]){
         Fp = Fp +1
       }
       else{
@@ -116,18 +119,20 @@ autoknn = function(traindat, testdat, trainlab, testlab, numrow, numk = 50){
     Tp = Tn = Fn = Fp = 0
   }
   
-  pr = data.frame(names, pr)
-  names(pr) = c("Names", "Precision", "Recall", "F1")
+  pr = data.frame(rankabund, pr)
+  names(pr) = c(rank, "Abundance", "Precision", "Recall", "F1")
   pr[is.nan(pr)] = 0
-  mean(pr[,2])
-  mean(pr[,3])
-  mean(pr[,4])
   
-  mylist = list("Accuracy" = max(accuracy[,2]), "trueprob" = truetaxonprob, "falseprob" = falsetaxonprob, "Precision" = mean(pr[,2]), "Recall" = mean(pr[,3]), "F1" = mean(pr[,4]), "probdist" = probdist, "k" = bestk)
+  mylist = list("Accuracy" = max(accuracy[,2]), "trueprob" = truetaxonprob, "falseprob" = falsetaxonprob, "Precision" = mean(pr[,2]), "Recall" = mean(pr[,3]), "F1" = mean(pr[,4]), "k" = bestk, "pr" = pr, "trueprobdistr" = trueprobdistr, "falseprobdistr" = falseprobdistr)
   
   return(mylist)
 }
 
+regression = function(x, y){
+  fit  <- lm(y~x)
+  plot(x,y,pch=19,ylim=c(0,1))
+  lines(xx, predict(fit, data.frame(x=xx)), col="red")
+}
 #############           #############
 #############  Species  #############
 #############           #############
@@ -293,123 +298,162 @@ m = 1
 for(m in 1:8){
   if(m == 1){
     results[m,1] = "Species"
-    list = autoknn(num.sptrain, num.spvalid, sptrainLabels, spvalidLabels, nrow(num.spvalid))
+    list = autoknn("Species", num.sptrain, num.spvalid, sptrainLabels, spvalidLabels, nrow(num.spvalid))
     results[m,2] = list$Accuracy
     results[m,3] = list$trueprob
     results[m,4] = list$falseprob
     results[m,5] = list$Precision
     results[m,6] = list$Recall
     results[m,7] = list$F1
-    trueprobdist = as.data.frame(table(list$probdist[,1]))
-    falseprobdist = as.data.frame(table(list$probdist[,2]))
-    trueprobdist[,1] = as.numeric(levels(trueprobdist[,1]))[trueprobdist[,1]]
-    falseprobdist[,1] = as.numeric(levels(falseprobdist[,1]))[falseprobdist[,1]]
-    plot(trueprobdist[,1], trueprobdist[,2], xlab = "Probability", ylab = "Frequency", main = "Species")
+    results[m,8] = list$k
+    trueprobdistr = as.data.frame(list$trueprobdistr)
+    falseprobdistr = as.data.frame(list$falseprobdistr)
+    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Species")
+    speciespr = list$pr
   }
   if(m == 2){
     results[m,1] = "Group"
-    list = autoknn(num.grouptrain, num.groupvalid, grouptrainLabels, groupvalidLabels, nrow(num.groupvalid))
+    list = autoknn("Group", num.grouptrain, num.groupvalid, grouptrainLabels, groupvalidLabels, nrow(num.groupvalid))
     results[m,2] = list$Accuracy
     results[m,3] = list$trueprob
     results[m,4] = list$falseprob
     results[m,5] = list$Precision
     results[m,6] = list$Recall
     results[m,7] = list$F1
-    trueprobdist = as.data.frame(table(list$probdist[,1]))
-    falseprobdist = as.data.frame(table(list$probdist[,2]))
-    trueprobdist[,1] = as.numeric(levels(trueprobdist[,1]))[trueprobdist[,1]]
-    falseprobdist[,1] = as.numeric(levels(falseprobdist[,1]))[falseprobdist[,1]]
-    plot(trueprobdist[,1], trueprobdist[,2], xlab = "Probability", ylab = "Frequency", main = "Group")
+    results[m,8] = list$k
+    trueprobdistr = as.data.frame(list$trueprobdistr)
+    falseprobdistr = as.data.frame(list$falseprobdistr)
+    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Group")
+    grouppr = list$pr
   }
   if(m == 3){
     results[m,1] = "Subgenus"
-    list = autoknn(num.subgenustrain, num.subgenusvalid, subgenustrainLabels, subgenusvalidLabels, nrow(num.subgenusvalid))
+    list = autoknn("Subgenus", num.subgenustrain, num.subgenusvalid, subgenustrainLabels, subgenusvalidLabels, nrow(num.subgenusvalid))
     results[m,2] = list$Accuracy
     results[m,3] = list$trueprob
     results[m,4] = list$falseprob
     results[m,5] = list$Precision
     results[m,6] = list$Recall
     results[m,7] = list$F1
-    trueprobdist = as.data.frame(table(list$probdist[,1]))
-    falseprobdist = as.data.frame(table(list$probdist[,2]))
-    trueprobdist[,1] = as.numeric(levels(trueprobdist[,1]))[trueprobdist[,1]]
-    falseprobdist[,1] = as.numeric(levels(falseprobdist[,1]))[falseprobdist[,1]]
-    plot(trueprobdist[,1], trueprobdist[,2], xlab = "Probability", ylab = "Frequency", main = "Subgenus")
+    trueprobdistr = as.data.frame(list$trueprobdistr)
+    falseprobdistr = as.data.frame(list$falseprobdistr)
+    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Subgenus")
+    subgenuspr = list$pr
   }
   if(m == 4){
     results[m,1] = "Genus"
-    list = autoknn(num.genustrain, num.genusvalid, genustrainLabels, genusvalidLabels, nrow(num.genusvalid))
+    list = autoknn("Genus", num.genustrain, num.genusvalid, genustrainLabels, genusvalidLabels, nrow(num.genusvalid))
     results[m,2] = list$Accuracy
     results[m,3] = list$trueprob
     results[m,4] = list$falseprob
     results[m,5] = list$Precision
     results[m,6] = list$Recall
     results[m,7] = list$F1
-    trueprobdist = as.data.frame(table(list$probdist[,1]))
-    falseprobdist = as.data.frame(table(list$probdist[,2]))
-    trueprobdist[,1] = as.numeric(levels(trueprobdist[,1]))[trueprobdist[,1]]
-    falseprobdist[,1] = as.numeric(levels(falseprobdist[,1]))[falseprobdist[,1]]
-    plot(trueprobdist[,1], trueprobdist[,2], xlab = "Probability", ylab = "Frequency", main = "Genus")
+    results[m,8] = list$k
+    trueprobdistr = as.data.frame(list$trueprobdistr)
+    falseprobdistr = as.data.frame(list$falseprobdistr)
+    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Genus")
+    genuspr = list$pr
   }
   if(m == 5){
     results[m,1] = "Subtribe"
-    list = autoknn(num.subtribtrain, num.subtribvalid, subtribtrainLabels, subtribvalidLabels, nrow(num.subtribvalid))
+    list = autoknn("Subtribe", num.subtribtrain, num.subtribvalid, subtribtrainLabels, subtribvalidLabels, nrow(num.subtribvalid))
     results[m,2] = list$Accuracy
     results[m,3] = list$trueprob
     results[m,4] = list$falseprob
     results[m,5] = list$Precision
     results[m,6] = list$Recall
     results[m,7] = list$F1
-    trueprobdist = as.data.frame(table(list$probdist[,1]))
-    falseprobdist = as.data.frame(table(list$probdist[,2]))
-    trueprobdist[,1] = as.numeric(levels(trueprobdist[,1]))[trueprobdist[,1]]
-    falseprobdist[,1] = as.numeric(levels(falseprobdist[,1]))[falseprobdist[,1]]
-    plot(trueprobdist[,1], trueprobdist[,2], xlab = "Probability", ylab = "Frequency", main = "Subtribe")
+    results[m,8] = list$k
+    trueprobdistr = as.data.frame(list$trueprobdistr)
+    falseprobdistr = as.data.frame(list$falseprobdistr)
+    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Subtribe")
+    subtribpr = list$pr
   }
   if(m == 6){
     results[m,1] = "Tribe"
-    list = autoknn(num.tribtrain, num.tribvalid, tribtrainLabels, tribvalidLabels, nrow(num.tribvalid))
+    list = autoknn("Tribe", num.tribtrain, num.tribvalid, tribtrainLabels, tribvalidLabels, nrow(num.tribvalid))
     results[m,2] = list$Accuracy
     results[m,3] = list$trueprob
     results[m,4] = list$falseprob
     results[m,5] = list$Precision
     results[m,6] = list$Recall
     results[m,7] = list$F1
-    trueprobdist = as.data.frame(table(list$probdist[,1]))
-    falseprobdist = as.data.frame(table(list$probdist[,2]))
-    trueprobdist[,1] = as.numeric(levels(trueprobdist[,1]))[trueprobdist[,1]]
-    falseprobdist[,1] = as.numeric(levels(falseprobdist[,1]))[falseprobdist[,1]]
-    plot(trueprobdist[,1], trueprobdist[,2], xlab = "Probability", ylab = "Frequency", main = "Tribe")
+    results[m,8] = list$k
+    trueprobdistr = as.data.frame(list$trueprobdistr)
+    falseprobdistr = as.data.frame(list$falseprobdistr)
+    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Tribe")
+    tribpr = list$pr
   }
   if(m == 7){
     results[m,1] = "Supertribe"
-    list = autoknn(num.suptribtrain, num.suptribvalid, suptribtrainLabels, suptribvalidLabels, nrow(num.suptribvalid))
+    list = autoknn("Supertribe", num.suptribtrain, num.suptribvalid, suptribtrainLabels, suptribvalidLabels, nrow(num.suptribvalid))
     results[m,2] = list$Accuracy
     results[m,3] = list$trueprob
     results[m,4] = list$falseprob
     results[m,5] = list$Precision
     results[m,6] = list$Recall
     results[m,7] = list$F1
-    trueprobdist = as.data.frame(table(list$probdist[,1]))
-    falseprobdist = as.data.frame(table(list$probdist[,2]))
-    trueprobdist[,1] = as.numeric(levels(trueprobdist[,1]))[trueprobdist[,1]]
-    falseprobdist[,1] = as.numeric(levels(falseprobdist[,1]))[falseprobdist[,1]]
-    plot(trueprobdist[,1], trueprobdist[,2], xlab = "Probability", ylab = "Frequency", main = "Supertribe")
+    results[m,8] = list$k
+    trueprobdistr = as.data.frame(list$trueprobdistr)
+    falseprobdistr = as.data.frame(list$falseprobdistr)
+    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Supertribe")
+    suptribpr = list$pr
   }
   if(m == 8){
     results[m,1] = "Subfamily"
-    list = autoknn(num.subfamtrain, num.subfamvalid, subfamtrainLabels, subfamvalidLabels, nrow(num.subfamvalid))
+    list = autoknn("Subfamily", num.subfamtrain, num.subfamvalid, subfamtrainLabels, subfamvalidLabels, nrow(num.subfamvalid))
     results[m,2] = list$Accuracy
     results[m,3] = list$trueprob
     results[m,4] = list$falseprob
     results[m,5] = list$Precision
     results[m,6] = list$Recall
     results[m,7] = list$F1
-    trueprobdist = as.data.frame(table(list$probdist[,1]))
-    falseprobdist = as.data.frame(table(list$probdist[,2]))
-    trueprobdist[,1] = as.numeric(levels(trueprobdist[,1]))[trueprobdist[,1]]
-    falseprobdist[,1] = as.numeric(levels(falseprobdist[,1]))[falseprobdist[,1]]
-    plot(trueprobdist[,1], trueprobdist[,2], xlab = "Probability", ylab = "Frequency", main = "Subfamily")
+    results[m,8] = list$k
+    trueprobdistr = as.data.frame(list$trueprobdistr)
+    falseprobdistr = as.data.frame(list$falseprobdistr)
+    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Subfamily")
+    subfampr = list$pr
   }
 }
 
@@ -417,12 +461,10 @@ results[,2]=round(results[,2],3)
 results$Rank <- factor(results$Rank, levels = results$Rank)
 
 ggplot(data=results, aes(x=Rank, y=Accuracy)) +
-    geom_bar(stat="identity", fill="steelblue")+
-    geom_text(aes(label=Accuracy), vjust=1.5, color="white", size=3.5)+
-    geom_text(aes(label=results[,9]), vjust=3, color="white", size=3.5)+
-    theme(axis.text.x = element_text(angle = 90, hjust = 0),
-          plot.caption = element_text(hjust = 0))+
-    ylim(0, 1)
+     geom_bar(stat="identity", fill="steelblue")+
+     geom_text(aes(label=Accuracy), vjust=1.6, color="white", size=3.5)+
+     theme(axis.text.x = element_text(angle = 90, hjust = 0))+
+     ylim(0, 1)
 
 mresults = melt(results, id.vars = "Rank")
 names(mresults) = c("Rank", "Variables", "Value")
