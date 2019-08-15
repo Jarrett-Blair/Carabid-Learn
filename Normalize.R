@@ -1,7 +1,7 @@
 library(ggplot2)
 library(lattice)
 library(caret)
-setwd("C:/Carabid_Data/Carabid")
+setwd("C:/Carabid_Data/Carabid_Data/Carabid")
 #With PCA
 #normParam <- preProcess(trainData, method = "pca", thresh = 0.95)
 
@@ -31,7 +31,7 @@ spnorm.validData <- predict(spnormParam, spvalidData)
 
 write.csv(spnorm.testData, "normsptest.csv", row.names = F)
 write.csv(spnorm.trainData, "normsptrain.csv", row.names = F)
-write.csv(spnorm.validData, "normsptvalid.csv", row.names = F)
+write.csv(spnorm.validData, "normspvalid.csv", row.names = F)
 
 #Group
 
@@ -46,7 +46,7 @@ groupnorm.validData <- predict(groupnormParam, groupvalidData)
 
 write.csv(groupnorm.testData, "normgrouptest.csv", row.names = F)
 write.csv(groupnorm.trainData, "normgrouptrain.csv", row.names = F)
-write.csv(groupnorm.validData, "normgrouptvalid.csv", row.names = F)
+write.csv(groupnorm.validData, "normgroupvalid.csv", row.names = F)
 
 #Subgenus
 
@@ -61,7 +61,7 @@ subgenusnorm.validData <- predict(subgenusnormParam, subgenusvalidData)
 
 write.csv(subgenusnorm.testData, "normsubgenustest.csv", row.names = F)
 write.csv(subgenusnorm.trainData, "normsubgenustrain.csv", row.names = F)
-write.csv(subgenusnorm.validData, "normsubgenustvalid.csv", row.names = F)
+write.csv(subgenusnorm.validData, "normsubgenusvalid.csv", row.names = F)
 
 #Subtribe
 
@@ -76,7 +76,7 @@ subtribnorm.validData <- predict(subtribnormParam, subtribvalidData)
 
 write.csv(subtribnorm.testData, "normsubtribtest.csv", row.names = F)
 write.csv(subtribnorm.trainData, "normsubtribtrain.csv", row.names = F)
-write.csv(subtribnorm.validData, "normsubtribtvalid.csv", row.names = F)
+write.csv(subtribnorm.validData, "normsubtribvalid.csv", row.names = F)
 
 #Tribe
 
@@ -91,7 +91,7 @@ tribnorm.validData <- predict(tribnormParam, tribvalidData)
 
 write.csv(tribnorm.testData, "normtribtest.csv", row.names = F)
 write.csv(tribnorm.trainData, "normtribtrain.csv", row.names = F)
-write.csv(tribnorm.validData, "normtribtvalid.csv", row.names = F)
+write.csv(tribnorm.validData, "normtribvalid.csv", row.names = F)
 
 #Supertribe
 
@@ -106,7 +106,7 @@ suptribnorm.validData <- predict(suptribnormParam, suptribvalidData)
 
 write.csv(suptribnorm.testData, "normsuptribtest.csv", row.names = F)
 write.csv(suptribnorm.trainData, "normsuptribtrain.csv", row.names = F)
-write.csv(suptribnorm.validData, "normsuptribtvalid.csv", row.names = F)
+write.csv(suptribnorm.validData, "normsuptribvalid.csv", row.names = F)
 
 #Subfamily
 
@@ -121,4 +121,4 @@ subfamnorm.validData <- predict(subfamnormParam, subfamvalidData)
 
 write.csv(subfamnorm.testData, "normsubfamtest.csv", row.names = F)
 write.csv(subfamnorm.trainData, "normsubfamtrain.csv", row.names = F)
-write.csv(subfamnorm.validData, "normsubfamtvalid.csv", row.names = F)
+write.csv(subfamnorm.validData, "normsubfamvalid.csv", row.names = F)

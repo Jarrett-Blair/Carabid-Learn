@@ -3,15 +3,16 @@ library(gmodels)
 library(ggplot2)
 library(pvclass)
 library(reshape2)
-setwd("C:/Carabid_Data/Carabid")
+library(viridis)
+setwd("C:/Carabid_Data/Carabid_Data/Carabid")
 
 taxonprob = data.frame(matrix(NA, nrow = 8, ncol = 3))
 df = data.frame(matrix(NA, nrow = 24, ncol = 3))
 is.nan.data.frame <- function(x)
   do.call(cbind, lapply(x, is.nan))
 
-results = data.frame(matrix(NA, nrow = 8, ncol = 8))
-names(results) = c("Rank", "Accuracy", "True Prob", "False Prob", "Precision", "Recall", "F1")
+results = data.frame(matrix(NA, nrow = 8, ncol = 9))
+names(results) = c("Rank", "Categories", "K", "Accuracy", "True Prob", "False Prob", "Precision", "Recall", "F1")
 numk = 50
 
 #AutoKnn function
@@ -23,7 +24,7 @@ autoknn = function(rank, traindat, testdat, trainlab, testlab, numrow, numk = 50
   n = 1
   pred = data.frame(matrix(NA, nrow = numrow, ncol = numk))
   for(n in 1:numk){
-    pred[, n] = knn(train = traindat, test = testdat, cl = trainlab, k=n)
+    pred[, n] = class::knn(train = traindat, test = testdat, cl = trainlab, k=n)
   }
   merge = data.frame(testlab, pred)
   
@@ -46,8 +47,8 @@ autoknn = function(rank, traindat, testdat, trainlab, testlab, numrow, numk = 50
   
   #Prob returns the vote share of the winning category
   prob = data.frame(matrix(NA, nrow = nrow(pred), ncol = 2))
-  prob[,1] = knn(train = traindat, test = testdat, cl = trainlab, k=which.max(accuracy[,2]))
-  prob[,2] = attr(knn(train = traindat, test = testdat, cl = trainlab, k=which.max(accuracy[,2]), prob = TRUE), "prob")
+  prob[,1] = class::knn(train = traindat, test = testdat, cl = trainlab, k=which.max(accuracy[,2]))
+  prob[,2] = attr(class::knn(train = traindat, test = testdat, cl = trainlab, k=which.max(accuracy[,2]), prob = TRUE), "prob")
   mergeprob = data.frame(testlab, prob)
   names(mergeprob) = c("Real", "Pred", "Prob")
   bestk = which.max(accuracy[,2])
@@ -123,16 +124,12 @@ autoknn = function(rank, traindat, testdat, trainlab, testlab, numrow, numk = 50
   names(pr) = c(rank, "Abundance", "Precision", "Recall", "F1")
   pr[is.nan(pr)] = 0
   
-  mylist = list("Accuracy" = max(accuracy[,2]), "trueprob" = truetaxonprob, "falseprob" = falsetaxonprob, "Precision" = mean(pr[,2]), "Recall" = mean(pr[,3]), "F1" = mean(pr[,4]), "k" = bestk, "pr" = pr, "trueprobdistr" = trueprobdistr, "falseprobdistr" = falseprobdistr)
+  mylist = list("Accuracy" = max(accuracy[,2]), "trueprob" = truetaxonprob, "falseprob" = falsetaxonprob, "Precision" = mean(pr[,3]), "Recall" = mean(pr[,4]), "F1" = mean(pr[,5]), "k" = bestk, "pr" = pr, "trueprobdistr" = trueprobdistr, "falseprobdistr" = falseprobdistr, "Categories" = nlevels(trainlab))
   
   return(mylist)
 }
 
-regression = function(x, y){
-  fit  <- lm(y~x)
-  plot(x,y,pch=19,ylim=c(0,1))
-  lines(xx, predict(fit, data.frame(x=xx)), col="red")
-}
+
 #############           #############
 #############  Species  #############
 #############           #############
@@ -294,167 +291,299 @@ num.subfamvalid = subfamvalidData[, sapply(subfamvalidData, is.numeric)]
 num.subfamtest = subfamtestData[, sapply(subfamtestData, is.numeric)]
 
 
-m = 1
-for(m in 1:8){
-  if(m == 1){
-    results[m,1] = "Species"
-    list = autoknn("Species", num.sptrain, num.spvalid, sptrainLabels, spvalidLabels, nrow(num.spvalid))
-    results[m,2] = list$Accuracy
-    results[m,3] = list$trueprob
-    results[m,4] = list$falseprob
-    results[m,5] = list$Precision
-    results[m,6] = list$Recall
-    results[m,7] = list$F1
-    results[m,8] = list$k
-    trueprobdistr = as.data.frame(list$trueprobdistr)
-    falseprobdistr = as.data.frame(list$falseprobdistr)
-    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
-    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
-    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
-    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
-    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
-    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Species")
-    speciespr = list$pr
+getresults = function(plottype){
+  m = 1
+  for(m in 1:8){
+    if(m == 1){
+      results[m,1] = "Species"
+      list = autoknn("Species", num.sptrain, num.spvalid, sptrainLabels, spvalidLabels, nrow(num.spvalid))
+      results[m,2] = list$Categories
+      results[m,3] = list$k
+      results[m,4] = list$Accuracy
+      results[m,5] = list$trueprob
+      results[m,6] = list$falseprob
+      results[m,7] = list$Precision
+      results[m,8] = list$Recall
+      results[m,9] = list$F1
+      if(plottype == "prcurve"){
+        trueprobdistr = as.data.frame(list$trueprobdistr)
+        falseprobdistr = as.data.frame(list$falseprobdistr)
+        plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+      }
+      if(plottype == "probfreq"){
+        trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+        falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+        trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+        falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+        plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Species")
+      }
+      if(plottype == "regression"){
+        pr = list$pr
+        xx = seq(min(pr$Abundance) - 5, max(pr$Abundance) + 5, length = 50)
+        x = pr$Abundance
+        y = pr$Recall
+        d = data.frame(x,y)
+        logEstimate = lm(y~log(x), data = d)
+        plot(x,y,pch=19,ylim=c(0,1), main = "Species Abundance/Recall Regression")
+        splogpred = predict(logEstimate, newdata = data.frame(x=xx))
+        lines(xx, splogpred)
+        legend("bottomright", bty="n", legend = paste("R2 is", format(summary(logEstimate)$r.squared, digits = 4)))
+      }
+    }
+    if(m == 2){
+      results[m,1] = "Group"
+      list = autoknn("Group", num.grouptrain, num.groupvalid, grouptrainLabels, groupvalidLabels, nrow(num.groupvalid))
+      results[m,2] = list$Categories
+      results[m,3] = list$k
+      results[m,4] = list$Accuracy
+      results[m,5] = list$trueprob
+      results[m,6] = list$falseprob
+      results[m,7] = list$Precision
+      results[m,8] = list$Recall
+      results[m,9] = list$F1
+      if(plottype == "prcurve"){
+        trueprobdistr = as.data.frame(list$trueprobdistr)
+        falseprobdistr = as.data.frame(list$falseprobdistr)
+        plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+      }
+      if(plottype == "probfreq"){
+        trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+        falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+        trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+        falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+        plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Group")
+      }
+      if(plottype == "regression"){
+        pr = list$pr
+        xx = seq(min(pr$Abundance) - 5, max(pr$Abundance) + 5, length = 50)
+        x = pr$Abundance
+        y = pr$Recall
+        d = data.frame(x,y)
+        logEstimate = lm(y~log(x), data = d)
+        plot(x,y,pch=19,ylim=c(0,1), main = "Group Abundance/Recall Regression")
+        grouplogpred = predict(logEstimate, newdata = data.frame(x=xx))
+        lines(xx, grouplogpred)
+        legend("bottomright", bty="n", legend = paste("R2 is", format(summary(logEstimate)$r.squared, digits = 4)))
+      }
+    }
+    if(m == 3){
+      results[m,1] = "Subgenus"
+      list = autoknn("Subgenus", num.subgenustrain, num.subgenusvalid, subgenustrainLabels, subgenusvalidLabels, nrow(num.subgenusvalid))
+      results[m,2] = list$Categories
+      results[m,3] = list$k
+      results[m,4] = list$Accuracy
+      results[m,5] = list$trueprob
+      results[m,6] = list$falseprob
+      results[m,7] = list$Precision
+      results[m,8] = list$Recall
+      results[m,9] = list$F1
+      if(plottype == "prcurve"){
+        trueprobdistr = as.data.frame(list$trueprobdistr)
+        falseprobdistr = as.data.frame(list$falseprobdistr)
+        plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+      }
+      if(plottype == "probfreq"){
+        trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+        falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+        trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+        falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+        plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Subgenus")
+      }
+      if(plottype == "regression"){
+        pr = list$pr
+        xx = seq(min(pr$Abundance) - 5, max(pr$Abundance) + 5, length = 50)
+        x = pr$Abundance
+        y = pr$Recall
+        d = data.frame(x,y)
+        logEstimate = lm(y~log(x), data = d)
+        plot(x,y,pch=19,ylim=c(0,1), main = "Subgenus Abundance/Recall Regression")
+        subgenlogpred = predict(logEstimate, newdata = data.frame(x=xx))
+        lines(xx, subgenlogpred)
+        legend("bottomright", bty="n", legend = paste("R2 is", format(summary(logEstimate)$r.squared, digits = 4)))
+      }
+    }
+    if(m == 4){
+      results[m,1] = "Genus"
+      list = autoknn("Genus", num.genustrain, num.genusvalid, genustrainLabels, genusvalidLabels, nrow(num.genusvalid))
+      results[m,2] = list$Categories
+      results[m,3] = list$k
+      results[m,4] = list$Accuracy
+      results[m,5] = list$trueprob
+      results[m,6] = list$falseprob
+      results[m,7] = list$Precision
+      results[m,8] = list$Recall
+      results[m,9] = list$F1
+      if(plottype == "prcurve"){
+        trueprobdistr = as.data.frame(list$trueprobdistr)
+        falseprobdistr = as.data.frame(list$falseprobdistr)
+        plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+      }
+      if(plottype == "probfreq"){
+        trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+        falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+        trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+        falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+        plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Genus")
+      }
+      if(plottype == "regression"){
+        pr = list$pr
+        xx = seq(min(pr$Abundance) - 5, max(pr$Abundance) + 5, length = 50)
+        x = pr$Abundance
+        y = pr$Recall
+        d = data.frame(x,y)
+        logEstimate = lm(y~log(x), data = d)
+        plot(x,y,pch=19,ylim=c(0,1), main = "Genus Abundance/Recall Regression")
+        genlogpred = predict(logEstimate, newdata = data.frame(x=xx))
+        lines(xx, genlogpred)
+        legend("bottomright", bty="n", legend = paste("R2 is", format(summary(logEstimate)$r.squared, digits = 4)))
+      }
+    }
+    if(m == 5){
+      results[m,1] = "Subtribe"
+      list = autoknn("Subtribe", num.subtribtrain, num.subtribvalid, subtribtrainLabels, subtribvalidLabels, nrow(num.subtribvalid))
+      results[m,2] = list$Categories
+      results[m,3] = list$k
+      results[m,4] = list$Accuracy
+      results[m,5] = list$trueprob
+      results[m,6] = list$falseprob
+      results[m,7] = list$Precision
+      results[m,8] = list$Recall
+      results[m,9] = list$F1
+      if(plottype == "prcurve"){
+        trueprobdistr = as.data.frame(list$trueprobdistr)
+        falseprobdistr = as.data.frame(list$falseprobdistr)
+        plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+      }
+      if(plottype == "probfreq"){
+        trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+        falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+        trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+        falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+        plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Subtribe")
+      }
+      if(plottype == "regression"){
+        pr = list$pr
+        xx = seq(min(pr$Abundance) - 5, max(pr$Abundance) + 5, length = 50)
+        x = pr$Abundance
+        y = pr$Recall
+        d = data.frame(x,y)
+        logEstimate = lm(y~log(x), data = d)
+        plot(x,y,pch=19,ylim=c(0,1), main = "Subtribe Abundance/Recall Regression")
+        subtriblogpred = predict(logEstimate, newdata = data.frame(x=xx))
+        lines(xx, subtriblogpred)
+        legend("bottomright", bty="n", legend = paste("R2 is", format(summary(logEstimate)$r.squared, digits = 4)))
+      }
+    }
+    if(m == 6){
+      results[m,1] = "Tribe"
+      list = autoknn("Tribe", num.tribtrain, num.tribvalid, tribtrainLabels, tribvalidLabels, nrow(num.tribvalid))
+      results[m,2] = list$Categories
+      results[m,3] = list$k
+      results[m,4] = list$Accuracy
+      results[m,5] = list$trueprob
+      results[m,6] = list$falseprob
+      results[m,7] = list$Precision
+      results[m,8] = list$Recall
+      results[m,9] = list$F1
+      if(plottype == "prcurve"){
+        trueprobdistr = as.data.frame(list$trueprobdistr)
+        falseprobdistr = as.data.frame(list$falseprobdistr)
+        plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+      }
+      if(plottype == "probfreq"){
+        trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+        falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+        trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+        falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+        plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Tribe")
+      }
+      if(plottype == "regression"){
+        pr = list$pr
+        xx = seq(min(pr$Abundance) - 5, max(pr$Abundance) + 5, length = 50)
+        x = pr$Abundance
+        y = pr$Recall
+        d = data.frame(x,y)
+        logEstimate = lm(y~log(x), data = d)
+        plot(x,y,pch=19,ylim=c(0,1), main = "Tribe Abundance/Recall Regression")
+        triblogpred = predict(logEstimate, newdata = data.frame(x=xx))
+        lines(xx, triblogpred)
+        legend("bottomright", bty="n", legend = paste("R2 is", format(summary(logEstimate)$r.squared, digits = 4)))
+      }
+    }
+    if(m == 7){
+      results[m,1] = "Supertribe"
+      list = autoknn("Supertribe", num.suptribtrain, num.suptribvalid, suptribtrainLabels, suptribvalidLabels, nrow(num.suptribvalid))
+      results[m,2] = list$Categories
+      results[m,3] = list$k
+      results[m,4] = list$Accuracy
+      results[m,5] = list$trueprob
+      results[m,6] = list$falseprob
+      results[m,7] = list$Precision
+      results[m,8] = list$Recall
+      results[m,9] = list$F1
+      if(plottype == "prcurve"){
+        trueprobdistr = as.data.frame(list$trueprobdistr)
+        falseprobdistr = as.data.frame(list$falseprobdistr)
+        plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+      }
+      if(plottype == "probfreq"){
+        trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+        falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+        trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+        falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+        plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Supertribe")
+      }
+      if(plottype == "regression"){
+        pr = list$pr
+        xx = seq(min(pr$Abundance) - 5, max(pr$Abundance) + 5, length = 50)
+        x = pr$Abundance
+        y = pr$Recall
+        d = data.frame(x,y)
+        logEstimate = lm(y~log(x), data = d)
+        plot(x,y,pch=19,ylim=c(0,1), main = "Supertribe Abundance/Recall Regression")
+        suptriblogpred = predict(logEstimate, newdata = data.frame(x=xx))
+        lines(xx, suptriblogpred)
+        legend("bottomright", bty="n", legend = paste("R2 is", format(summary(logEstimate)$r.squared, digits = 4)))
+      }
+    }
+    if(m == 8){
+      results[m,1] = "Subfamily"
+      list = autoknn("Subfamily", num.subfamtrain, num.subfamvalid, subfamtrainLabels, subfamvalidLabels, nrow(num.subfamvalid))
+      results[m,2] = list$Categories
+      results[m,3] = list$k
+      results[m,4] = list$Accuracy
+      results[m,5] = list$trueprob
+      results[m,6] = list$falseprob
+      results[m,7] = list$Precision
+      results[m,8] = list$Recall
+      results[m,9] = list$F1
+      if(plottype == "prcurve"){
+        trueprobdistr = as.data.frame(list$trueprobdistr)
+        falseprobdistr = as.data.frame(list$falseprobdistr)
+        plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
+      }
+      if(plottype == "probfreq"){
+        trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
+        falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
+        trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
+        falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
+        plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Subfamily")
+      }
+      if(plottype == "regression"){
+        pr = list$pr
+        xx = seq(min(pr$Abundance) - 5, max(pr$Abundance) + 5, length = 50)
+        x = pr$Abundance
+        y = pr$Recall
+        d = data.frame(x,y)
+        logEstimate = lm(y~log(x), data = d)
+        plot(x,y,pch=19,ylim=c(0,1), main = "Subfamily Abundance/Recall Regression")
+        subfamlogpred = predict(logEstimate, newdata = data.frame(x=xx))
+        lines(xx, subfamlogpred)
+        legend("bottomright", bty="n", legend = paste("R2 is", format(summary(logEstimate)$r.squared, digits = 4)))
+      }
+    }
   }
-  if(m == 2){
-    results[m,1] = "Group"
-    list = autoknn("Group", num.grouptrain, num.groupvalid, grouptrainLabels, groupvalidLabels, nrow(num.groupvalid))
-    results[m,2] = list$Accuracy
-    results[m,3] = list$trueprob
-    results[m,4] = list$falseprob
-    results[m,5] = list$Precision
-    results[m,6] = list$Recall
-    results[m,7] = list$F1
-    results[m,8] = list$k
-    trueprobdistr = as.data.frame(list$trueprobdistr)
-    falseprobdistr = as.data.frame(list$falseprobdistr)
-    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
-    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
-    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
-    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
-    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
-    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Group")
-    grouppr = list$pr
-  }
-  if(m == 3){
-    results[m,1] = "Subgenus"
-    list = autoknn("Subgenus", num.subgenustrain, num.subgenusvalid, subgenustrainLabels, subgenusvalidLabels, nrow(num.subgenusvalid))
-    results[m,2] = list$Accuracy
-    results[m,3] = list$trueprob
-    results[m,4] = list$falseprob
-    results[m,5] = list$Precision
-    results[m,6] = list$Recall
-    results[m,7] = list$F1
-    trueprobdistr = as.data.frame(list$trueprobdistr)
-    falseprobdistr = as.data.frame(list$falseprobdistr)
-    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
-    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
-    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
-    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
-    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
-    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Subgenus")
-    subgenuspr = list$pr
-  }
-  if(m == 4){
-    results[m,1] = "Genus"
-    list = autoknn("Genus", num.genustrain, num.genusvalid, genustrainLabels, genusvalidLabels, nrow(num.genusvalid))
-    results[m,2] = list$Accuracy
-    results[m,3] = list$trueprob
-    results[m,4] = list$falseprob
-    results[m,5] = list$Precision
-    results[m,6] = list$Recall
-    results[m,7] = list$F1
-    results[m,8] = list$k
-    trueprobdistr = as.data.frame(list$trueprobdistr)
-    falseprobdistr = as.data.frame(list$falseprobdistr)
-    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
-    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
-    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
-    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
-    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
-    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Genus")
-    genuspr = list$pr
-  }
-  if(m == 5){
-    results[m,1] = "Subtribe"
-    list = autoknn("Subtribe", num.subtribtrain, num.subtribvalid, subtribtrainLabels, subtribvalidLabels, nrow(num.subtribvalid))
-    results[m,2] = list$Accuracy
-    results[m,3] = list$trueprob
-    results[m,4] = list$falseprob
-    results[m,5] = list$Precision
-    results[m,6] = list$Recall
-    results[m,7] = list$F1
-    results[m,8] = list$k
-    trueprobdistr = as.data.frame(list$trueprobdistr)
-    falseprobdistr = as.data.frame(list$falseprobdistr)
-    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
-    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
-    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
-    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
-    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
-    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Subtribe")
-    subtribpr = list$pr
-  }
-  if(m == 6){
-    results[m,1] = "Tribe"
-    list = autoknn("Tribe", num.tribtrain, num.tribvalid, tribtrainLabels, tribvalidLabels, nrow(num.tribvalid))
-    results[m,2] = list$Accuracy
-    results[m,3] = list$trueprob
-    results[m,4] = list$falseprob
-    results[m,5] = list$Precision
-    results[m,6] = list$Recall
-    results[m,7] = list$F1
-    results[m,8] = list$k
-    trueprobdistr = as.data.frame(list$trueprobdistr)
-    falseprobdistr = as.data.frame(list$falseprobdistr)
-    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
-    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
-    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
-    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
-    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
-    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Tribe")
-    tribpr = list$pr
-  }
-  if(m == 7){
-    results[m,1] = "Supertribe"
-    list = autoknn("Supertribe", num.suptribtrain, num.suptribvalid, suptribtrainLabels, suptribvalidLabels, nrow(num.suptribvalid))
-    results[m,2] = list$Accuracy
-    results[m,3] = list$trueprob
-    results[m,4] = list$falseprob
-    results[m,5] = list$Precision
-    results[m,6] = list$Recall
-    results[m,7] = list$F1
-    results[m,8] = list$k
-    trueprobdistr = as.data.frame(list$trueprobdistr)
-    falseprobdistr = as.data.frame(list$falseprobdistr)
-    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
-    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
-    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
-    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
-    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
-    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Supertribe")
-    suptribpr = list$pr
-  }
-  if(m == 8){
-    results[m,1] = "Subfamily"
-    list = autoknn("Subfamily", num.subfamtrain, num.subfamvalid, subfamtrainLabels, subfamvalidLabels, nrow(num.subfamvalid))
-    results[m,2] = list$Accuracy
-    results[m,3] = list$trueprob
-    results[m,4] = list$falseprob
-    results[m,5] = list$Precision
-    results[m,6] = list$Recall
-    results[m,7] = list$F1
-    results[m,8] = list$k
-    trueprobdistr = as.data.frame(list$trueprobdistr)
-    falseprobdistr = as.data.frame(list$falseprobdistr)
-    plot(pr.curve(list$trueprobdistr, list$falseprobdistr, curve = T))
-    trueprobdistr = as.data.frame(table(as.factor(trueprobdistr[,1])))
-    falseprobdistr = as.data.frame(table(as.factor(falseprobdistr[,1])))
-    trueprobdistr[,1] = as.numeric(levels(trueprobdistr[,1]))[trueprobdistr[,1]]
-    falseprobdistr[,1] = as.numeric(levels(falseprobdistr[,1]))[falseprobdistr[,1]]
-    plot(trueprobdistr[,1], trueprobdistr[,2], xlab = "Probability", ylab = "Frequency", main = "Subfamily")
-    subfampr = list$pr
-  }
+  return(results)
 }
 
 results[,2]=round(results[,2],3)
@@ -475,43 +604,40 @@ prf = subset(mresults, Variables %in% c("Precision", "Recall", "F1"))
 order = c("Species", "Group", "Subgenus", "Genus", "Subtribe", "Tribe", "Supertribe", "Subfamily")
 
 
-ggplot(mresults, aes(Rank,Value, fill=Variables)) + 
-    geom_bar(position = "dodge", stat="identity")+ 
-    scale_x_discrete(limits=order) +
-    scale_fill_brewer(palette = "Paired") +
-    geom_text(aes(label = Value), position = position_dodge(0.9), vjust = -0.5) +
-    ggtitle("All Results")+
-    theme(
-      panel.background = element_rect(fill = "#BFD5E3", colour = "#BFD5E3",
-                                    size = 2, linetype = "solid"),
-      panel.grid.major = element_line(size = 0.5, linetype = 'solid',
-                                    colour = "white"), 
-      panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
-                                    colour = "white"),
-      plot.title = element_text(hjust = 0.5))
+#ggplot(mresults, aes(Rank,Value, fill=Variables)) + 
+#    geom_bar(position = "dodge", stat="identity")+ 
+#    scale_x_discrete(limits=order) +
+#    scale_fill_brewer(palette = "Paired") +
+#    geom_text(aes(label = Value), position = position_dodge(0.9), vjust = -0.5) +
+#    ggtitle("All Results")+
+#    theme(
+#      panel.background = element_rect(fill = "#BFD5E3", colour = "#BFD5E3",
+#                                    size = 2, linetype = "solid"),
+#      panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+#                                    colour = "white"), 
+#      panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+#                                    colour = "white"),
+#      plot.title = element_text(hjust = 0.5))
  
-ggplot(Accuracy, aes(Rank,Value, fill = Rank)) + 
-  geom_bar(position = "dodge", stat="identity")+ 
+ggplot(Accuracy, aes(Rank,Value)) + 
+  geom_bar(position = "dodge", stat="identity", fill = "#000080")+ 
   scale_x_discrete(limits=c("Species", "Group", "Subgenus", "Genus", "Subtribe", "Tribe", "Supertribe", "Subfamily")) +
-  scale_fill_viridis(discrete = T, option = "D", limits = rev(order)) +
+  scale_y_continuous(name = "Accuracy", limits = c(0,1))+
   guides(fill=FALSE) +
-  geom_text(aes(label = Value), position = position_dodge(0.9), vjust = -0.5) +
-  ggtitle("Accuracy")+
+  geom_text(aes(label = Value), position = position_dodge(0.1), vjust = -0.5) +
+  ggtitle("Accuracy of Carabid KNN model at eight taxonomic ranks")+
+  geom_point(data = results, aes(x = Rank, y = 1/Categories), color= "#FFFFFF")+
+  geom_text(aes(label = sprintf(print(paste0("n = ", results$Categories)), digits = 3)), hjust = .5, vjust = 2, color= "#FFFFFF") +
   theme(
-    panel.background = element_rect(fill = "#BFD5E3", colour = "#BFD5E3",
-                                    size = 2, linetype = "solid"),
-    panel.grid.major = element_line(size = 0.5, linetype = 'solid',
-                                    colour = "white"), 
-    panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
-                                    colour = "white"),
     plot.title = element_text(hjust = 0.5))
 
 ggplot(prob, aes(Rank,Value, fill=Variables)) + 
   geom_bar(position = "dodge", stat="identity")+ 
   scale_x_discrete(limits=c("Species", "Group", "Subgenus", "Genus", "Subtribe", "Tribe", "Supertribe", "Subfamily")) +
+  scale_y_continuous(name = "Vote Share", limits = c(0,1))+
   scale_fill_brewer(palette = "Dark2") +
   geom_text(aes(label = Value), position = position_dodge(0.9), vjust = -0.5) +
-  ggtitle("Probability")+
+  ggtitle("(KNN) Vote share of true and false predictions across all modelled taxa (PCA)")+
   theme(
     panel.background = element_rect(fill = "#BFD5E3", colour = "#BFD5E3",
                                     size = 2, linetype = "solid"),
@@ -524,9 +650,10 @@ ggplot(prob, aes(Rank,Value, fill=Variables)) +
 ggplot(prf, aes(Rank,Value, fill=Variables)) + 
   geom_bar(position = "dodge", stat="identity")+ 
   scale_x_discrete(limits=c("Species", "Group", "Subgenus", "Genus", "Subtribe", "Tribe", "Supertribe", "Subfamily")) +
+  scale_y_continuous(name = "Value", limits = c(0,1))+
   scale_fill_brewer(palette = "Accent") +
   geom_text(aes(label = Value), position = position_dodge(0.9), vjust = -0.5) +
-  ggtitle("Precision/Recall/F1")+
+  ggtitle("(KNN) Precision/Recall/F1 (PCA)")+
   theme(
     panel.background = element_rect(fill = "#BFD5E3", colour = "#BFD5E3",
                                     size = 2, linetype = "solid"),
